@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,11 @@ public abstract class Worker<T extends BenchmarkModule> implements Runnable {
 
   // Interval requests used by the monitor
   private final AtomicInteger intervalRequests = new AtomicInteger(0);
+
+  // Per-interval latency samples (in microseconds) used by the latency monitor.
+  // Populated on every MEASURE-phase success; drained per-tick by Monitor.
+  private final ConcurrentLinkedQueue<Integer> intervalLatenciesMicros =
+      new ConcurrentLinkedQueue<>();
 
   private final int id;
   private final T benchmark;
@@ -129,6 +135,33 @@ public abstract class Worker<T extends BenchmarkModule> implements Runnable {
 
   public final int getAndResetIntervalRequests() {
     return intervalRequests.getAndSet(0);
+  }
+
+  /**
+   * Drain the per-interval latency sample buffer in microseconds. Safe to call concurrently with
+   * workers recording new samples. Returned array may be empty if no samples have been recorded
+   * since the last drain.
+   */
+  public final int[] drainIntervalLatenciesMicros() {
+    // Poll in a loop rather than copying-then-clearing so that concurrent offers made during the
+    // drain are either returned now or left for the next drain (never lost).
+    int[] buf = new int[Math.max(16, intervalLatenciesMicros.size())];
+    int count = 0;
+    Integer v;
+    while ((v = intervalLatenciesMicros.poll()) != null) {
+      if (count == buf.length) {
+        int[] grown = new int[buf.length * 2];
+        System.arraycopy(buf, 0, grown, 0, count);
+        buf = grown;
+      }
+      buf[count++] = v;
+    }
+    if (count == buf.length) {
+      return buf;
+    }
+    int[] out = new int[count];
+    System.arraycopy(buf, 0, out, 0, count);
+    return out;
   }
 
   public final Iterable<LatencyRecord.Sample> getLatencyRecords() {
@@ -313,6 +346,7 @@ public abstract class Worker<T extends BenchmarkModule> implements Runnable {
             if (preState == MEASURE && postPhase.getId() == prePhase.getId()) {
               latencies.addLatency(transactionType.getId(), start, end, this.id, prePhase.getId());
               intervalRequests.incrementAndGet();
+              intervalLatenciesMicros.offer((int) ((end - start + 500) / 1000));
             }
             if (prePhase.isLatencyRun()) {
               workloadState.startColdQuery();

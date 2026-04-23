@@ -257,6 +257,7 @@ public abstract class DatabaseMonitor extends Monitor {
     int interval = this.monitorInfo.getMonitoringInterval();
 
     LOG.info("Starting Monitor Interval [{}ms]", interval);
+    initLatencyReportingIfEnabled();
     // Make sure we record one event during setup.
     if (this.conn != null) {
       cleanupCache();
@@ -273,6 +274,14 @@ public abstract class DatabaseMonitor extends Monitor {
       if (this.conn != null) {
         runExtraction();
       }
+      long measuredRequests = 0;
+      synchronized (this.testState) {
+        for (Worker<?> w : this.workers) {
+          measuredRequests += w.getAndResetIntervalRequests();
+        }
+      }
+      double tps = measuredRequests / (interval / 1000d);
+      reportLatencyTick(interval, tps);
       if (ticks % FILE_FLUSH_COUNT == 0) {
         writeToCSV();
       }
@@ -297,5 +306,6 @@ public abstract class DatabaseMonitor extends Monitor {
       }
       this.conn = null;
     }
+    super.tearDown();
   }
 }

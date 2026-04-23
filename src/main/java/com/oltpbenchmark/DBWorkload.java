@@ -99,6 +99,7 @@ public class DBWorkload {
     class SimpleMonitorInfo implements MonitorInfo {
       private int interval = 0;
       private MonitorInfo.MonitoringType type = MonitorInfo.MonitoringType.THROUGHPUT;
+      private java.util.Optional<java.nio.file.Path> latencyCsvPath = java.util.Optional.empty();
 
       @Override
       public int getMonitoringInterval() {
@@ -110,6 +111,11 @@ public class DBWorkload {
         return type;
       }
 
+      @Override
+      public java.util.Optional<java.nio.file.Path> getLatencyReportCsvPath() {
+        return latencyCsvPath;
+      }
+
       // Custom setters
       public void updateInterval(int val) {
         this.interval = val;
@@ -117,6 +123,10 @@ public class DBWorkload {
 
       public void updateType(MonitoringType val) {
         this.type = val;
+      }
+
+      public void updateLatencyCsvPath(java.nio.file.Path p) {
+        this.latencyCsvPath = java.util.Optional.ofNullable(p);
       }
     }
 
@@ -134,11 +144,36 @@ public class DBWorkload {
         case "throughput":
           monitorInfoImpl.updateType(MonitorInfo.MonitoringType.THROUGHPUT);
           break;
+        case "latency":
+          monitorInfoImpl.updateType(MonitorInfo.MonitoringType.LATENCY);
+          break;
         default:
           throw new ParseException(
               "Monitoring type '"
                   + argsLine.getOptionValue("mt")
-                  + "' is undefined, allowed values are: advanced/throughput");
+                  + "' is undefined, allowed values are: advanced/throughput/latency");
+      }
+    }
+
+    // When latency reporting is requested, derive a CSV path for per-interval metrics from -d.
+    if (monitorInfoImpl.getMonitoringType() == MonitorInfo.MonitoringType.LATENCY
+        || monitorInfoImpl.getMonitoringType() == MonitorInfo.MonitoringType.ADVANCED) {
+      if (monitorInfoImpl.getMonitoringInterval() > 0) {
+        String baseDir = argsLine.getOptionValue("d", "results");
+        String bench = argsLine.getOptionValue("b", "benchmark");
+        String name =
+            org.apache.commons.lang3.StringUtils.join(
+                org.apache.commons.lang3.StringUtils.split(bench, ','), '-');
+        String fileName =
+            name + "_" + com.oltpbenchmark.util.TimeUtil.getCurrentTimeString()
+                + ".latency-intervals.csv";
+        java.nio.file.Path csvPath = java.nio.file.Paths.get(baseDir, fileName);
+        monitorInfoImpl.updateLatencyCsvPath(csvPath);
+        LOG.info("Per-interval latency metrics will be written to {}", csvPath.toAbsolutePath());
+      } else {
+        LOG.warn(
+            "Latency monitoring requested (-mt {}) but no interval was set via -im/--interval-monitor; no live reports will be emitted.",
+            monitorInfoImpl.getMonitoringType());
       }
     }
 
@@ -741,7 +776,14 @@ public class DBWorkload {
     options.addOption("h", "help", false, "Print this help");
     options.addOption("s", "sample", true, "Sampling window");
     options.addOption("im", "interval-monitor", true, "Monitoring Interval in milliseconds");
-    options.addOption("mt", "monitor-type", true, "Type of Monitoring (throughput/advanced)");
+    options.addOption(
+        "mt",
+        "monitor-type",
+        true,
+        "Type of Monitoring (throughput/advanced/latency). "
+            + "'latency' emits per-interval latency percentiles to the log and to "
+            + "<dir>/<bench>_<timestamp>.latency-intervals.csv. "
+            + "'advanced' does the same plus DB-specific metrics where supported.");
     options.addOption(
         "d",
         "directory",

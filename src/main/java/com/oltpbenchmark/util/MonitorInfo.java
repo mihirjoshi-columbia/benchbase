@@ -15,6 +15,8 @@
 
 package com.oltpbenchmark.util;
 
+import java.nio.file.Path;
+import java.util.Optional;
 import org.immutables.value.Value;
 
 @Value.Immutable
@@ -22,7 +24,8 @@ public interface MonitorInfo {
 
   public enum MonitoringType {
     ADVANCED,
-    THROUGHPUT;
+    THROUGHPUT,
+    LATENCY;
   }
 
   /** Monitoring interval. */
@@ -35,5 +38,14 @@ public interface MonitorInfo {
   @Value.Default
   public default MonitoringType getMonitoringType() {
     return MonitoringType.THROUGHPUT;
+  }
+
+  /**
+   * Path to the CSV file where per-interval latency metrics should be appended. When empty, no CSV
+   * is written (log lines are still emitted if the monitoring type requests them).
+   */
+  @Value.Default
+  public default Optional<Path> getLatencyReportCsvPath() {
+    return Optional.empty();
   }
 }

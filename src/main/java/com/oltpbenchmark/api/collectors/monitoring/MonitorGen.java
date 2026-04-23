@@ -29,6 +29,7 @@ public class MonitorGen {
               return new Monitor(monitorInfo, testState, workers);
           }
         }
+      case LATENCY:
       default:
         return new Monitor(monitorInfo, testState, workers);
     }

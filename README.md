@@ -135,13 +135,45 @@ usage: benchbase
     --dialects-export <arg>     Export benchmark SQL to a dialects file
     --execute <arg>             Execute the benchmark workload
  -h,--help                      Print this help
- -im,--interval-monitor <arg>   Throughput Monitoring Interval in
-                                milliseconds
+ -im,--interval-monitor <arg>   Monitoring interval in milliseconds. Enables
+                                the live monitor thread; see -mt for type.
  -jh,--json-histograms <arg>    Export histograms to JSON file
     --load <arg>                Load data using the benchmark's data
                                 loader
+ -mt,--monitor-type <arg>       Type of live monitoring: throughput (default),
+                                advanced, or latency. 'latency' logs per-
+                                interval latency percentiles (p50/p95/p99) in
+                                addition to throughput and appends a row
+                                every -im ms to
+                                <dir>/<bench>_<timestamp>.latency-intervals.csv.
+                                'advanced' does the same plus DB-specific
+                                metrics where supported.
  -s,--sample <arg>              Sampling window
 ```
+
+#### Live Latency Reporting
+
+Use `-im` together with `-mt latency` to stream per-interval latency statistics
+while the benchmark runs. For example, emit stats every second during a TPC-C
+run on Postgres:
+
+```sh
+java -jar benchbase.jar \
+  -b tpcc -c config/postgres/sample_tpcc_config.xml \
+  --create=true --load=true --execute=true \
+  -im 1000 -mt latency -d results/tpcc-live
+```
+
+The monitor logs a line per interval:
+
+```text
+INFO  Monitor - Latency [window=1000ms] count=1523 tps=1523.00 p50=4312us p95=9871us p99=15240us min=812us max=42100us avg=5120.4
+```
+
+And appends rows to `results/tpcc-live/tpcc_<timestamp>.latency-intervals.csv`
+with columns
+`elapsed_sec,interval_ms,count,tps,min_us,p25_us,p50_us,p75_us,p90_us,p95_us,p99_us,max_us,avg_us,stdev_us`,
+suitable for feeding into plotting tools.
 
 ### How to Run with Maven
 
